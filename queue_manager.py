@@ -24,7 +24,8 @@ class QueueManager:
         # Hide .temp folder on Windows
         if sys.platform == 'win32':
             subprocess.run(['attrib', '+h', '.temp'], check=False,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
         
         # Start background threads
         self.dl_thread = threading.Thread(target=self._download_loop, daemon=True)

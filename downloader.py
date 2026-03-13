@@ -4,6 +4,10 @@ import threading
 import yt_dlp # type: ignore
 import sys
 import queue
+import io
+import requests
+import re
+from PIL import Image, ImageTk
 
 class MyLogger(object):
     def __init__(self, log_queue, ui_queue_cb):
@@ -50,6 +54,24 @@ class App:
                                  activebackground="#1e5ba6", relief=tk.FLAT, cursor="hand2", padx=15)
         self.add_btn.pack(side='left')
 
+        # Preview Box
+        self.preview_frame = tk.Frame(root, padx=20, pady=0, bg="#f0f2f5")
+        self.preview_frame.pack(fill='x')
+        
+        self.preview_img_lbl = tk.Label(self.preview_frame, bg="#f0f2f5")
+        self.preview_img_lbl.pack(side='left', padx=(0, 10))
+        
+        self.preview_title_lbl = tk.Label(self.preview_frame, text="", font=("Segoe UI", 10, "italic"), bg="#f0f2f5", fg="#555555", wraplength=550, justify='left')
+        self.preview_title_lbl.pack(side='left', fill='x', expand=True)
+        
+        self.current_preview_url = ""
+        self.preview_debounce_timer = None
+        self.preview_image_ref = None
+
+        self.url_entry.bind('<KeyRelease>', self.on_url_change)
+        self.url_entry.bind('<<Paste>>', lambda e: self.root.after(50, self.on_url_change))
+
+
         # Control Buttons Frame
         ctrl_frame = tk.Frame(root, padx=20, pady=5, bg="#f0f2f5")
         ctrl_frame.pack(fill='x')
@@ -92,6 +114,86 @@ class App:
         self.tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
+    def on_url_change(self, event=None):
+        url = self.url_entry.get().strip()
+        
+        if url == self.current_preview_url:
+            return
+            
+        self.current_preview_url = url
+        
+        if self.preview_debounce_timer:
+            self.root.after_cancel(self.preview_debounce_timer)
+            self.preview_debounce_timer = None
+            
+        if not url or not re.match(r'^https?://', url):
+            self.preview_img_lbl.config(image='')
+            self.preview_title_lbl.config(text="")
+            return
+            
+        self.preview_title_lbl.config(text="Loading preview...")
+        self.preview_img_lbl.config(image='')
+        self.preview_debounce_timer = self.root.after(500, self._start_preview_fetch)
+
+    def _start_preview_fetch(self):
+        url = self.current_preview_url
+        threading.Thread(target=self._fetch_preview_thread, args=(url,), daemon=True).start()
+
+    def _fetch_preview_thread(self, url):
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': 'in_playlist',
+            'noplaylist': True,
+            'skip_download': True
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    self.root.after(0, lambda: self._update_preview_ui(url, None, "Could not fetch info"))
+                    return
+                
+                title = info.get('title', 'Unknown Title')
+                thumbnails = info.get('thumbnails', [])
+                
+                img_data = None
+                if thumbnails:
+                    # Get a reasonably sized thumbnail, but not massive. The last one is usually best quality.
+                    thumb_url = thumbnails[-1]['url']
+                    try:
+                        resp = requests.get(thumb_url, timeout=5)
+                        if resp.status_code == 200:
+                            img_data = resp.content
+                    except Exception:
+                        pass
+                
+                self.root.after(0, lambda: self._update_preview_ui(url, img_data, title))
+        except Exception:
+            self.root.after(0, lambda: self._update_preview_ui(url, None, "Invalid URL or Video Unavailable"))
+
+    def _update_preview_ui(self, url, img_data, title):
+        if url != self.current_preview_url:
+            return
+            
+        self.preview_title_lbl.config(text=title)
+        
+        if img_data:
+            try:
+                if not hasattr(Image, 'Resampling'):
+                    resample_filter = Image.ANTIALIAS # type: ignore
+                else:
+                    resample_filter = Image.Resampling.LANCZOS # type: ignore
+
+                image = Image.open(io.BytesIO(img_data))
+                image.thumbnail((120, 68), resample_filter)
+                photo = ImageTk.PhotoImage(image)
+                self.preview_img_lbl.config(image=photo)
+                self.preview_image_ref = photo
+            except Exception:
+                self.preview_img_lbl.config(image='')
+        else:
+            self.preview_img_lbl.config(image='')
+
     def add_url(self):
         url = self.url_entry.get().strip()
         if not url:
@@ -99,6 +201,7 @@ class App:
             return
         self.qm.add_url(url)
         self.url_entry.delete(0, tk.END)
+        self.on_url_change()
 
     def toggle_pause(self):
         if self.qm.is_paused:

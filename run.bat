@@ -12,7 +12,4 @@ pip install -r requirements.txt
 
 echo.
 echo Starting YouTube Downloader...
-python downloader.py
-
-echo.
-pause
+start "" pythonw downloader.py

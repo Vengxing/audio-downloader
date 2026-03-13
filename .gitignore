@@ -2,3 +2,5 @@ downloaded/
 .temp/
 __pycache__/
 *.pyc
+venv/
+.env

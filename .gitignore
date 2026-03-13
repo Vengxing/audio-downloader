@@ -1,2 +1,4 @@
-./downloaded
-./.temp
+downloaded/
+.temp/
+__pycache__/
+*.pyc

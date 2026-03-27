@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Local Music Library Sidekick",
+  "version": "1.0",
+  "description": "Shows your locally downloaded songs as you search on YouTube.",
+  "permissions": [],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "http://localhost:5005/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

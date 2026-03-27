@@ -1,4 +1,12 @@
 // content.js - Injects local search overlay using global event delegation
+//
+// =========================================================================
+// CRITICAL MEMORY AND RULE:
+// THE USER IS NEVER AFK. DO NOT ASSUME THE USER IS ABANDONING THE BROWSER.
+// The user rigorously clicks at least 30 times a minute while downloading music.
+// This is NOT an AFK issue. Any panel or overlay appearing is a direct bug,
+// not a result of native browser inactivity.
+// =========================================================================
 
 let overlay = null;
 
@@ -101,11 +109,6 @@ document.addEventListener('input', (e) => {
     }
 }, true);
 
-document.addEventListener('focusin', (e) => {
-    if (e.target && (e.target.id === 'search' || e.target.name === 'search_query')) {
-        debouncedHandle(e);
-    }
-}, true);
 
 document.addEventListener('click', (e) => {
   const ov = getOverlay();
@@ -123,24 +126,37 @@ let currentVideoTitle = "";
 function injectBadge(matchName) {
   let badge = document.getElementById('local-dl-badge');
   if (!badge) {
-    badge = document.createElement('span');
+    badge = document.createElement('div');
     badge.id = 'local-dl-badge';
-    badge.style.background = '#0f8a46'; // Nice Spotify-esque green
+    badge.style.background = '#0f8a46'; 
     badge.style.color = '#fff';
-    badge.style.padding = '4px 8px';
-    badge.style.borderRadius = '4px';
-    badge.style.fontSize = '13px';
-    badge.style.fontWeight = '500';
-    badge.style.marginLeft = '12px';
-    badge.style.verticalAlign = 'middle';
-    badge.style.display = 'inline-block';
-    badge.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    badge.style.padding = '8px 16px';
+    badge.style.borderRadius = '30px';
+    badge.style.fontSize = '14px';
+    badge.style.fontWeight = 'bold';
+    badge.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+    badge.style.position = 'fixed';
+    badge.style.bottom = '30px';
+    badge.style.left = '30px';
+    badge.style.zIndex = '999999';
+    badge.style.pointerEvents = 'none';
+    document.body.appendChild(badge);
   }
   badge.textContent = `☑ Already in Library: ${matchName}`;
   return badge;
 }
 
 async function checkCurrentVideo() {
+
+  const ytPopup = document.querySelector('yt-confirm-dialog-renderer');
+  if (ytPopup && ytPopup.offsetParent !== null && ytPopup.innerText.includes("watching")) {
+      const confirmBtn = document.querySelector('yt-confirm-dialog-renderer #confirm-button, yt-confirm-dialog-renderer [aria-label="Yes"]');
+      if (confirmBtn) {
+          confirmBtn.click();
+          console.log("Local Music Extension: Silently dismissed YouTube native auto-pause prompt.");
+      }
+  }
+
   if (window.location.pathname !== '/watch') {
     const b = document.getElementById('local-dl-badge');
     if(b) b.remove();
@@ -148,13 +164,9 @@ async function checkCurrentVideo() {
     return;
   }
 
-  // Find YouTube's video title element
-  const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title yt-formatted-string, div#title yt-formatted-string, #title > h1');
-  
-  if (!titleEl) {
-      console.log("Local Music Extension: On /watch, but could not find the h1 title element yet.");
-      return;
-  }
+  // Support both modern and legacy/Opera GX YouTube DOM trees
+  const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title yt-formatted-string, div#title yt-formatted-string');
+  if (!titleEl) return;
   
   const titleText = titleEl.textContent.trim();
   if (!titleText || titleText === currentVideoTitle) return; // Prevent duplicate checking
@@ -165,9 +177,7 @@ async function checkCurrentVideo() {
   const files = await fetchLocalMatches(titleText);
   
   if (files && files.length > 0) {
-    // Inject the success badge into the title container
-    const badge = injectBadge(files[0]);
-    titleEl.parentElement.appendChild(badge);
+    injectBadge(files[0]);
   } else {
     const b = document.getElementById('local-dl-badge');
     if(b) b.remove();
@@ -175,7 +185,7 @@ async function checkCurrentVideo() {
 }
 
 // YouTube is an aggressive SPA, use a MutationObserver on body to detect page/title changes seamlessly
-const observer = new MutationObserver(debounce(checkCurrentVideo, 1000));
+const observer = new MutationObserver(debounce(checkCurrentVideo, 2000));
 observer.observe(document.body, { childList: true, subtree: true });
 
 // Also hook into YouTube's custom navigation events for immediacy

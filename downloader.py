@@ -60,16 +60,22 @@ class SearchAPIHandler(BaseHTTPRequestHandler):
             files = []
 
         if q:
-            words = set(q.split())
+            # Strip symbols and convert to words
+            clean_q = re.sub(r'[^a-zA-Z0-9\s]', ' ', q)
+            stop_words = {'the', 'a', 'and', 'of', 'in', 'on', 'for', 'with', 'official', 'video', 'music', 'audio', 'lyric', 'lyrics'}
+            words = set(w for w in clean_q.split() if w not in stop_words and len(w) > 1)
+            
             scored = []
             for f in files:
                 if not f.lower().endswith('.mp3'): continue
                 raw_name = os.path.splitext(f)[0]
-                f_name = raw_name.lower()
+                clean_f = re.sub(r'[^a-zA-Z0-9\s]', ' ', raw_name.lower())
                 
                 # Calculate match score (how many words from query exist in filename)
-                score = sum(1 for w in words if w in f_name)
-                if score > 0:
+                score = sum(1 for w in words if w in clean_f)
+                
+                # Require at least 50% of the meaningful query words to match the filename
+                if len(words) > 0 and (score / len(words)) >= 0.5:
                     scored.append((score, raw_name))
             
             # Sort by highest score first

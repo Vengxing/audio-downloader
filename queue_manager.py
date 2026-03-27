@@ -5,19 +5,22 @@ import queue
 import time
 import subprocess
 import yt_dlp # type: ignore
+from download_log import DownloadLog # type: ignore
 
 class QueueManager:
-    def __init__(self, ui_update_cb):
+    def __init__(self, ui_update_cb, history_update_cb=None):
         self.queue = []         # List of dicts: {'id': int, 'url': str, 'title': str, 'status': str, 'progress': str, 'eta': str}
         self.next_id = 1
         
         self.ui_update_cb = ui_update_cb
+        self.history_update_cb = history_update_cb
         
         self.is_paused = False
         self.download_cancel_flag = False
         self.current_download_id = None # type: ignore
         
         self.conversion_queue = queue.Queue()
+        self.log = DownloadLog()
         
         os.makedirs('.temp', exist_ok=True)
         os.makedirs('downloaded', exist_ok=True)
@@ -41,7 +44,8 @@ class QueueManager:
             'title': 'Fetching...',
             'status': 'Queued',
             'progress': '-',
-            'eta': '-'
+            'eta': '-',
+            'byte_size': 0
         }
         self.queue.append(item)
         self.next_id += 1
@@ -153,7 +157,9 @@ class QueueManager:
                 self._update_item(item['id'], progress=percent, eta=eta)
             elif d['status'] == 'finished':
                 downloaded_file_path.append(d['filename'])
-                self._update_item(item['id'], progress='100%', eta='-')
+                # Capture total byte size (prefer actual over estimate)
+                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                self._update_item(item['id'], progress='100%', eta='-', byte_size=int(total))
 
         # Use static_ffmpeg path for yt-dlp too
         import static_ffmpeg # type: ignore
@@ -187,8 +193,10 @@ class QueueManager:
             self._update_item(item['id'], status='Converting', progress='Wait...')
             self.conversion_queue.put({
                 'id': item['id'],
+                'url': item['url'],
                 'raw_file': raw_file,
-                'title': item['title']
+                'title': item['title'],
+                'byte_size': item.get('byte_size', 0)
             })
 
     def _conversion_loop(self):
@@ -234,12 +242,24 @@ class QueueManager:
                     
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags)
                 
-                # Success
+                # Success — log to DB using actual MP3 file size
+                actual_size = os.path.getsize(output_file) if os.path.exists(output_file) else 0
+                self.log.add_entry(
+                    url=conv_task.get('url', ''),
+                    youtube_title=conv_task['title'],
+                    filename=os.path.basename(output_file),
+                    byte_size=actual_size
+                )
+                
                 self._update_item(item_id, status='Done', progress='Saved as MP3')
                 
                 # Delete original raw temp file
                 if os.path.exists(raw_file):
                     os.remove(raw_file)
+                
+                # Notify UI to refresh history tab
+                if self.history_update_cb:
+                    self.history_update_cb()
                     
             except Exception as e:
                 self._update_item(item_id, status='Error', progress='Conversion failed')

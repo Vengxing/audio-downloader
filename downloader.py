@@ -87,8 +87,16 @@ class SearchAPIHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 def start_search_api():
-    server = HTTPServer(('localhost', SEARCH_API_PORT), SearchAPIHandler)
-    server.serve_forever()
+    class ReusableServer(HTTPServer):
+        allow_reuse_address = True
+        
+    try:
+        server = ReusableServer(('localhost', SEARCH_API_PORT), SearchAPIHandler)
+        server.serve_forever()
+    except Exception as e:
+        if SearchAPIHandler.log_queue:
+            SearchAPIHandler.log_queue.put(f"CRITICAL ERROR: Search API Server crashed: {e}\n")
+        print("Search API Error:", e)
 
 DOWNLOADED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'downloaded')
 

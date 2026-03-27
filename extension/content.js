@@ -149,10 +149,12 @@ async function checkCurrentVideo() {
   }
 
   // Find YouTube's video title element
-  const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string') 
-               || document.querySelector('h1.title yt-formatted-string');
+  const titleEl = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title yt-formatted-string, div#title yt-formatted-string, #title > h1');
   
-  if (!titleEl) return;
+  if (!titleEl) {
+      console.log("Local Music Extension: On /watch, but could not find the h1 title element yet.");
+      return;
+  }
   
   const titleText = titleEl.textContent.trim();
   if (!titleText || titleText === currentVideoTitle) return; // Prevent duplicate checking
